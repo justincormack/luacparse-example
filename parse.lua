@@ -103,6 +103,27 @@ function findChildrenByType(cursor, type)
    return children
 end
 
+function translateType(cur, typ)
+    if not typ then
+        typ = cur:type()
+    end
+
+    local typeKind = tostring(typ)
+    if typeKind == 'Typedef' or typeKind == 'Record' then
+        return typ:declaration():name()
+    elseif typeKind == 'Pointer' then
+        return translateType(cur, typ:pointee()) .. '*'
+    elseif typeKind == 'LValueReference' then
+        return translateType(cur, typ:pointee()) .. '&'
+    elseif typeKind == 'Unexposed' then
+        local def = getExtent(cur:location())
+        DBG('!Unexposed!', def)
+        return def
+    else
+        return typeKind
+    end
+end
+
 local function trim(s)
  local from = s:match"^%s*()"
  local res = from > #s and "" or s:match(".*%S", from)
@@ -193,6 +214,15 @@ code:write [[
 
 ]]
 
+-- how to handle C types
+
+local typeHandlers = {
+  Long = "LuaL_checkint",
+  ULong = "LuaL_checkint",
+  Int = "LuaL_checkint",
+  UInt = "LuaL_checkint",
+}
+
 for k, t in pairs(sf) do
   -- create constructor for type
   local sk = "struct " .. k 
@@ -205,11 +235,29 @@ for k, t in pairs(sf) do
   code:write "  return 1;\n"
   code:write "}\n"
   code:write "\n"
+
+  -- function to check userdata is this type and assign to a
+  local check = '  ' .. sk .. ' *a = (' .. sk .. ' *) luaL_checkudata(L, 1, "' .. libname .. '.' .. k .. '");\n'
+
+  -- set functions
+  for f, ft in pairs(t) do
+    local tp = translateType(ft)
+    local name = ft:name()
+    if name:sub(1, 2) == "__" then break end
+    code:write("static int set_" .. k .. "_" .. name .. "(lua_State *L) {\n")
+    code:write(check)
+print(name, tp)
+    code:write "}\n"
+    code:write "\n"
+  end
+  -- get functions
+
   -- create metatable
   -- __index
-  --code:write("static const struct luaL_Reg mt_index_" .. k .. " [] = {\n")
+  code:write("static const struct luaL_Reg mt_" .. k .. " [] = {\n")
+  -- TODO change to __index and __newindex not set, get
   
-  --code:write "};\n"
+  code:write "};\n"
 end
 
 -- output code for functions
