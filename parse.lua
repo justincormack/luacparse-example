@@ -194,13 +194,22 @@ code:write [[
 ]]
 
 for k, t in pairs(sf) do
+  -- create constructor for type
   local sk = "struct " .. k 
   code:write("static int new_" .. k .. "(lua_State *L) {\n")
   -- TODO accept table initializer
   code:write("  " .. sk .. " *a;\n")
   code:write("  a = (" .. sk .. " *) lua_newuserdata(L, sizeof(" .. sk .. "));\n")
+  code:write('  luaL_getmetatable(L, "' .. libname .. "." .. k .. '");\n')
+  code:write "  lua_setmetatable(L, -2);\n"
   code:write "  return 1;\n"
   code:write "}\n"
+  code:write "\n"
+  -- create metatable
+  -- __index
+  --code:write("static const struct luaL_Reg mt_index_" .. k .. " [] = {\n")
+  
+  --code:write "};\n"
 end
 
 -- output code for functions
@@ -216,11 +225,14 @@ code:write("static const struct luaL_Reg " .. libname .. "_mod [] = {\n")
 for k, t in pairs(sf) do
   code:write('  {"' .. k .. '_t", new_' .. k .. '},\n')
 end
--- output functions
+-- TODO output functions
 code:write "  {NULL, NULL}\n"
 code:write "};\n"
 code:write "\n"
 code:write("int luaopen_" .. libname .. "(lua_State *L) {\n")
+for k, t in pairs(sf) do
+  code:write('  luaL_newmetatable(L, "' .. libname .. "." .. k .. '");\n')
+end
 code:write('  luaL_register(L, "' .. libname .. '", ' .. libname .. '_mod);\n')
 code:write "  return 1;\n"
 code:write "}\n"
