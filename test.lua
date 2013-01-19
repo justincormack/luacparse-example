@@ -12,11 +12,6 @@ assert(mt, "has a metatable")
 st:set_st_size(3)
 assert(st:st_size() == 3, "should have set value")
 
-local e = stat.example_t()
-
-e:set_x(4)
-assert(e:x() == 4, "should have set value")
-
 local ok, err = stat.stat("cindex.lua", st)
 assert(st:st_size() == 12916, "cindex.lua is 12916 bytes long, got " .. st:st_size())
 

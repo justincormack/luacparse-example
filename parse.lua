@@ -79,6 +79,7 @@ function translateType(cur, typ)
       UInt = "unsigned int",
       Long = "long",
       ULong = "unsigned long",
+      ["Char_S *"] = "const char *",
     }
 
     local function tr_f(d) return tr[d] or d end 
@@ -87,7 +88,7 @@ function translateType(cur, typ)
     if typeKind == 'Typedef' or typeKind == 'Record' then
         return typ:declaration():name()
     elseif typeKind == 'Pointer' then
-        return translateType(cur, typ:pointee()) .. ' *'
+        return tr_f(translateType(cur, typ:pointee()) .. ' *')
     elseif typeKind == 'LValueReference' then
         return translateType(cur, typ:pointee()) .. ' &'
     elseif typeKind == 'Unexposed' then
@@ -197,19 +198,19 @@ local function check_u(sk, k)
 end
 
 local typeHandlers = {
-  int = {check = check_s "luaL_checkint", push = "lua_pushinteger", ctype = "int"},
-  ["unsigned int"] = {check = check_s "luaL_checkint", push = "lua_pushinteger", ctype = "unsigned int"},
--- clearly we need TODO more work here for long values larger than 32 bits!
-  long = {check = check_s "luaL_checklong", push = "lua_pushinteger", ctype = "long"},
-  ["unsigned long"] = {check = check_s "luaL_checklong", push = "lua_pushinteger", ctype = "unsigned long"},
-  ["Char_S *"] = {check = check_s "luaL_checkstring", push = "lua_pushstring", ctype = "const char *"},
+  int = {check = check_s "luaL_checkint", push = "lua_pushinteger", opt = "luaL_optint"},
+  ["unsigned int"] = {check = check_s "luaL_checkint", push = "lua_pushinteger", opt = "luaL_optint"},
+  -- TODO more work here for long values larger than 32 bits
+  long = {check = check_s "luaL_checklong", push = "lua_pushinteger", opt = "luaL_optlong"},
+  ["unsigned long"] = {check = check_s "luaL_checklong", push = "lua_pushinteger", opt = "luaL_optlong"},
+  ["const char *"] = {check = check_s "luaL_checkstring", push = "lua_pushstring", opt = "luaL_optstring"},
 }
 
 for k, t in pairs(sf) do
   -- create constructor for type
   local sk = "struct " .. k
   local skk = sk .. " *"
-  typeHandlers[skk] = {check = check_u(skk, k), push = nil, ctype = skk}
+  typeHandlers[skk] = {check = check_u(skk, k)}
 
   code:write("static int new_", k, "(lua_State *L) {\n")
   -- TODO accept initializers
@@ -231,7 +232,7 @@ for k, t in pairs(sf) do
     local name = ft:name()
     code:write("static int set_", k, "_", name, "(lua_State *L) {\n")
     code:write("  ", check(1))
-    code:write("  ", th.ctype, " v = ", th.check(2), ";\n")
+    code:write("  ", tp, " v = ", th.check(2), ";\n")
     code:write("  a->", name, " = v;\n")
     code:write "  return 0;\n"
     code:write "}\n"
@@ -244,7 +245,7 @@ for k, t in pairs(sf) do
     local name = ft:name()
     code:write("static int get_", k, "_", name, "(lua_State *L) {\n")
     code:write("  ", check(1))
-    code:write("  ", th.ctype, " v = a->", name, ";\n")
+    code:write("  ", tp, " v = a->", name, ";\n")
     code:write("  ", th.push, "(L, v);\n")
     code:write "  return 1;\n"
     code:write "}\n"
@@ -273,7 +274,7 @@ for k, as in pairs(pf) do
     local tp = translateType(a)
     local name = a:name()
     local th = assert(typeHandlers[tp], "Cannot handle type " .. tp)
-    code:write("  ", th.ctype, " ", name, " = ", th.check(n), ";\n")
+    code:write("  ", tp, " ", name, " = ", th.check(n), ";\n")
   end
   local tp = translateType(funcs[k])
   local name = funcs[k]:name()
