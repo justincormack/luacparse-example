@@ -194,13 +194,17 @@ local function check_u(sk, k)
   return function(s) return '(' .. sk .. ') luaL_checkudata(L, ' .. s .. ', "' .. libname .. '.' .. k .. '")' end
 end
 
+local function opt(str, default)
+  return function(s) return str .. "(L, " .. s .. ", " .. default .. ")" end
+end
+
 local typeHandlers = {
-  int = {check = check_s "luaL_checkint", push = "lua_pushinteger", opt = "luaL_optint"},
-  ["unsigned int"] = {check = check_s "luaL_checkint", push = "lua_pushinteger", opt = "luaL_optint"},
+  int = {check = check_s "luaL_checkint", push = "lua_pushinteger", opt = opt("luaL_optint", 0)},
+  ["unsigned int"] = {check = check_s "luaL_checkint", push = "lua_pushinteger", opt = opt("luaL_optint", 0)},
   -- TODO more work here for long values larger than 32 bits
-  long = {check = check_s "luaL_checklong", push = "lua_pushinteger", opt = "luaL_optlong"},
-  ["unsigned long"] = {check = check_s "luaL_checklong", push = "lua_pushinteger", opt = "luaL_optlong"},
-  ["const char *"] = {check = check_s "luaL_checkstring", push = "lua_pushstring", opt = "luaL_optstring"},
+  long = {check = check_s "luaL_checklong", push = "lua_pushinteger", opt = opt("luaL_optlong", 0)},
+  ["unsigned long"] = {check = check_s "luaL_checklong", push = "lua_pushinteger", opt = opt("luaL_optlong", 0)},
+  ["const char *"] = {check = check_s "luaL_checkstring", push = "lua_pushstring"},
 }
 
 for k, t in pairs(sf) do
@@ -212,11 +216,12 @@ for k, t in pairs(sf) do
   typeHandlers[skk] = {check = check_u(skk, k)}
 
   code:write("static int new_", k, "(lua_State *L) {\n")
-  -- TODO accept initializers
-  code:write("  ", skk, "a;\n")
-  code:write("  a = (", skk, ") lua_newuserdata(L, sizeof(", sk, "));\n")
+  code:write("  ", skk, " a = (", skk, ") lua_newuserdata(L, sizeof(", sk, "));\n")
   code:write('  luaL_getmetatable(L, "', libname, ".", k, '");\n')
   code:write "  lua_setmetatable(L, -2);\n"
+
+  -- TODO accept initializers
+
   code:write "  return 1;\n"
   code:write "}\n"
   code:write "\n"
@@ -225,7 +230,7 @@ for k, t in pairs(sf) do
   local function check(s) return skk .. 'a = ' .. check_u(skk, k)(s) ..';\n' end
 
   -- set functions
-  for f, ft in pairs(t) do
+  for _, ft in pairs(t) do
     local tp = translateType(ft)
     local th = assert(typeHandlers[tp], "Cannot handle type " .. tp)
     local name = ft:name()
@@ -238,7 +243,7 @@ for k, t in pairs(sf) do
     code:write "\n"
   end
   -- get functions
-  for f, ft in pairs(t) do
+  for _, ft in pairs(t) do
     local tp = translateType(ft)
     local th = assert(typeHandlers[tp], "Cannot handle type " .. tp)
     local name = ft:name()
@@ -253,12 +258,12 @@ for k, t in pairs(sf) do
   -- create metatable
   code:write("static const struct luaL_Reg mt_", k, " [] = {\n")
   -- get functions
-  for f, ft in pairs(t) do
+  for _, ft in pairs(t) do
     local name = ft:name()
     code:write('  {"', name, '", get_', k, '_', name, '},\n')
   end
   -- set functions
-  for f, ft in pairs(t) do
+  for _, ft in pairs(t) do
     local name = ft:name()
     code:write('  {"set_', name, '", set_', k, '_', name, '},\n')
   end
@@ -269,7 +274,7 @@ end
 -- output code for functions
 for k, as in pairs(pf) do
   code:write("static int ", k, "_f(lua_State *L) {\n")
-  for n, a in pairs(as) do
+  for n, a in ipairs(as) do
     local tp = translateType(a)
     local name = a:name()
     local th = assert(typeHandlers[tp], "Cannot handle type " .. tp)
@@ -278,7 +283,7 @@ for k, as in pairs(pf) do
   local tp = translateType(funcs[k])
   local name = funcs[k]:name()
   code:write("  ", tp, " ret = ", name, "(")
-  for n, a in pairs(as) do
+  for n, a in ipairs(as) do
     if n ~= 1 then code:write ", " end
     code:write(a:name())
   end
