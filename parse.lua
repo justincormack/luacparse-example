@@ -1,5 +1,3 @@
-package.cpath = package.cpath .. ';../build/?.so'
-
 local clang = require 'luaclang-parser'
 
 do
@@ -150,7 +148,7 @@ local kinds = {
     code:write(text, ';\n')
     struct = findChildrenByType(cur, "StructDecl")
     if #struct > 0 then
-      if #struct > 1 then print("???", #struct) end
+      assert(#struct == 1)
       struct = struct[1]
       structFields(struct, name)
     end
@@ -210,6 +208,8 @@ for k, t in pairs(sf) do
   -- create constructor for type
   local sk = "struct " .. k
   local skk = sk .. " *"
+
+  -- add a type handler so we can deal with functions that use this type
   typeHandlers[skk] = {check = check_u(skk, k)}
 
   code:write("static int new_", k, "(lua_State *L) {\n")
