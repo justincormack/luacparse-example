@@ -1,4 +1,6 @@
-struct stat {  /* only used on 64 bit architectures */
+/* note that this is only the correct struct stat for 64 bit architectures */
+
+struct stat {
   unsigned long   st_dev;
   unsigned long   st_ino;
   unsigned long   st_nlink;
@@ -19,8 +21,13 @@ struct stat {  /* only used on 64 bit architectures */
   long            __unused[3];
 };
 
+struct example {
+  int x;
+  int y;
+  int z;
+};
+
 int stat(const char *path, struct stat *buf);
-int fstat(int fd, struct stat *buf);
 int lstat(const char *path, struct stat *buf);
 
 

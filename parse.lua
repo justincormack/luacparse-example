@@ -139,6 +139,8 @@ local code = assert(io.open('code.c', 'w'))
 code:write [[
 #include "lua.h"
 #include "lauxlib.h"
+#include <errno.h>
+#include <string.h>
 
 ]]
 
@@ -148,8 +150,10 @@ local function structFields(cur, name)
   sf[name] = {}
   fields = findChildrenByType(cur, "FieldDecl")
   for _, f in ipairs(fields) do
-    sf[name][#sf[name] + 1] = f
-    code:write("/* field ", f:name(), " */\n")
+    if f:name():sub(1, 2) ~= "__" then
+      sf[name][#sf[name] + 1] = f
+      --code:write("/* field ", f:name(), " */\n")
+    end
   end
 end
 
@@ -158,7 +162,7 @@ local function parmFields(cur, name)
   fields = findChildrenByType(cur, "ParmDecl")
   for _, f in ipairs(fields) do
     pf[name][#pf[name] + 1] = f
-    code:write("/* parm ", f:name(), " */\n")
+    -- code:write("/* parm ", f:name(), " */\n")
   end
 end
 
@@ -183,7 +187,7 @@ local kinds = {
   end,
   StructDecl = function(cur, name, text, children)
     if name == "" then return end
-    code:write(text, ';\n')
+    code:write(text, ';\n\n')
     structFields(cur, name)
   end,
   FunctionDecl = function(cur, name, text, children)
@@ -228,7 +232,7 @@ for k, t in pairs(sf) do
   -- create constructor for type
   local sk = "struct " .. k 
   code:write("static int new_", k, "(lua_State *L) {\n")
-  -- TODO accept table initializer
+  -- TODO accept initializers
   code:write("  ", sk, " *a;\n")
   code:write("  a = (", sk, " *) lua_newuserdata(L, sizeof(", sk, "));\n")
   code:write('  luaL_getmetatable(L, "', libname, ".", k, '");\n')
@@ -245,7 +249,6 @@ for k, t in pairs(sf) do
     local tp = translateType(ft)
     local th = assert(typeHandlers[tp], "Cannot handle type " .. tp)
     local name = ft:name()
-    if name:sub(1, 2) == "__" then break end
     code:write("static int set_", k, "_", name, "(lua_State *L) {\n")
     code:write(check)
     code:write("  ", th.ctype, " v = ", th.check, "(L, 2);\n")
@@ -259,7 +262,6 @@ for k, t in pairs(sf) do
     local tp = translateType(ft)
     local th = assert(typeHandlers[tp], "Cannot handle type " .. tp)
     local name = ft:name()
-    if name:sub(1, 2) == "__" then break end
     code:write("static int get_", k, "_", name, "(lua_State *L) {\n")
     code:write(check)
     code:write("  ", th.ctype, " v = a->", name, ";\n")
@@ -269,14 +271,32 @@ for k, t in pairs(sf) do
     code:write "\n"
   end
   -- create metatable
-  -- __index
   code:write("static const struct luaL_Reg mt_", k, " [] = {\n")
-  -- TODO change to __index and __newindex not set, get
-  
-  code:write "};\n"
+  -- get functions
+  for f, ft in pairs(t) do
+    local name = ft:name()
+    code:write('  {"', name, '", get_', k, '_', name, '},\n')
+  end
+  -- set functions
+  for f, ft in pairs(t) do
+    local name = ft:name()
+    code:write('  {"set_', name, '", set_', k, '_', name, '},\n')
+  end
+  code:write "  {NULL, NULL}\n"
+  code:write "};\n\n"
 end
 
 -- output code for functions
+for k, as in pairs(pf) do
+  code:write("static int ", k, "_f(lua_State *L) {\n")
+  for _, a in pairs(as) do
+print(a, a:name(), translateType(a))
+  end
+  code:write "  return 1;\n"
+  code:write "};\n\n"
+end
+
+-- register module
 
 code:write [[
 
@@ -296,6 +316,9 @@ code:write "\n"
 code:write("int luaopen_", libname, "(lua_State *L) {\n")
 for k, t in pairs(sf) do
   code:write('  luaL_newmetatable(L, "', libname, ".", k, '");\n')
+  code:write "  lua_pushvalue(L, -1);\n"
+  code:write '  lua_setfield(L, -2, "__index");\n'
+  code:write("  luaL_register(L, NULL, mt_", k, ");\n")
 end
 code:write('  luaL_register(L, "', libname, '", ', libname, '_mod);\n')
 code:write "  return 1;\n"
