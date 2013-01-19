@@ -10,7 +10,7 @@ INCLUDE=/usr/include/lua5.1
 LIBS=-lc -llua5.1
 LUA=lua5.1
 
-CFLAGS=-O2 -fpic
+CFLAGS=-O2 -fpic -Wall
 
 SONAME=stat.so
 LIBNAME=$(SONAME)

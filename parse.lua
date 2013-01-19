@@ -149,7 +149,7 @@ local function structFields(cur, name)
   fields = findChildrenByType(cur, "FieldDecl")
   for _, f in ipairs(fields) do
     sf[name][#sf[name] + 1] = f
-    code:write("/* field " .. f:name() .. " */\n")
+    code:write("/* field ", f:name(), " */\n")
   end
 end
 
@@ -158,7 +158,7 @@ local function parmFields(cur, name)
   fields = findChildrenByType(cur, "ParmDecl")
   for _, f in ipairs(fields) do
     pf[name][#pf[name] + 1] = f
-    code:write("/* parm " .. f:name() .. " */\n")
+    code:write("/* parm ", f:name(), " */\n")
   end
 end
 
@@ -170,7 +170,7 @@ local kinds = {
   end,
   TypedefDecl = function(cur, name, text, children)
     if name:sub(1, 2) == "__" then return end
-    code:write(text .. ';\n')
+    code:write(text, ';\n')
     struct = findChildrenByType(cur, "StructDecl")
     if #struct > 0 then
       if #struct > 1 then print("???", #struct) end
@@ -179,15 +179,15 @@ local kinds = {
     end
   end,
   VarDecl = function(cur, name, text, children)
-    code:write(text .. ';\n')
+    code:write(text, ';\n')
   end,
   StructDecl = function(cur, name, text, children)
     if name == "" then return end
-    code:write(text .. ';\n')
+    code:write(text, ';\n')
     structFields(cur, name)
   end,
   FunctionDecl = function(cur, name, text, children)
-    code:write(text .. ';\n')
+    code:write(text, ';\n')
     parmFields(cur, name)
   end,
 }
@@ -217,20 +217,21 @@ code:write [[
 -- how to handle C types
 
 local typeHandlers = {
-  Long = "LuaL_checkint",
-  ULong = "LuaL_checkint",
-  Int = "LuaL_checkint",
-  UInt = "LuaL_checkint",
+  Int = {check = "luaL_checkint", push = "lua_pushinteger", ctype = "int"},
+  UInt = {check = "luaL_checkint", push = "lua_pushinteger", ctype = "unsigned int"},
+-- clearly we need TODO more work here for long values larger than 32 bits!
+  Long = {check = "luaL_checklong", push = "lua_pushinteger", ctype = "long"},
+  ULong = {check = "luaL_checklong", push = "lua_pushinteger", ctype = "unsigned long"},
 }
 
 for k, t in pairs(sf) do
   -- create constructor for type
   local sk = "struct " .. k 
-  code:write("static int new_" .. k .. "(lua_State *L) {\n")
+  code:write("static int new_", k, "(lua_State *L) {\n")
   -- TODO accept table initializer
-  code:write("  " .. sk .. " *a;\n")
-  code:write("  a = (" .. sk .. " *) lua_newuserdata(L, sizeof(" .. sk .. "));\n")
-  code:write('  luaL_getmetatable(L, "' .. libname .. "." .. k .. '");\n')
+  code:write("  ", sk, " *a;\n")
+  code:write("  a = (", sk, " *) lua_newuserdata(L, sizeof(", sk, "));\n")
+  code:write('  luaL_getmetatable(L, "', libname, ".", k, '");\n')
   code:write "  lua_setmetatable(L, -2);\n"
   code:write "  return 1;\n"
   code:write "}\n"
@@ -242,19 +243,34 @@ for k, t in pairs(sf) do
   -- set functions
   for f, ft in pairs(t) do
     local tp = translateType(ft)
+    local th = assert(typeHandlers[tp], "Cannot handle type " .. tp)
     local name = ft:name()
     if name:sub(1, 2) == "__" then break end
-    code:write("static int set_" .. k .. "_" .. name .. "(lua_State *L) {\n")
+    code:write("static int set_", k, "_", name, "(lua_State *L) {\n")
     code:write(check)
-print(name, tp)
+    code:write("  ", th.ctype, " v = ", th.check, "(L, 2);\n")
+    code:write("  a->", name, " = v;\n")
+    code:write "  return 0;\n"
     code:write "}\n"
     code:write "\n"
   end
   -- get functions
-
+  for f, ft in pairs(t) do
+    local tp = translateType(ft)
+    local th = assert(typeHandlers[tp], "Cannot handle type " .. tp)
+    local name = ft:name()
+    if name:sub(1, 2) == "__" then break end
+    code:write("static int get_", k, "_", name, "(lua_State *L) {\n")
+    code:write(check)
+    code:write("  ", th.ctype, " v = a->", name, ";\n")
+    code:write("  ", th.push, "(L, v);\n")
+    code:write "  return 1;\n"
+    code:write "}\n"
+    code:write "\n"
+  end
   -- create metatable
   -- __index
-  code:write("static const struct luaL_Reg mt_" .. k .. " [] = {\n")
+  code:write("static const struct luaL_Reg mt_", k, " [] = {\n")
   -- TODO change to __index and __newindex not set, get
   
   code:write "};\n"
@@ -268,20 +284,20 @@ code:write [[
 
 ]]
 
-code:write("static const struct luaL_Reg " .. libname .. "_mod [] = {\n")
+code:write("static const struct luaL_Reg ", libname, "_mod [] = {\n")
 -- output types
 for k, t in pairs(sf) do
-  code:write('  {"' .. k .. '_t", new_' .. k .. '},\n')
+  code:write('  {"', k, '_t", new_', k, '},\n')
 end
 -- TODO output functions
 code:write "  {NULL, NULL}\n"
 code:write "};\n"
 code:write "\n"
-code:write("int luaopen_" .. libname .. "(lua_State *L) {\n")
+code:write("int luaopen_", libname, "(lua_State *L) {\n")
 for k, t in pairs(sf) do
-  code:write('  luaL_newmetatable(L, "' .. libname .. "." .. k .. '");\n')
+  code:write('  luaL_newmetatable(L, "', libname, ".", k, '");\n')
 end
-code:write('  luaL_register(L, "' .. libname .. '", ' .. libname .. '_mod);\n')
+code:write('  luaL_register(L, "', libname, '", ', libname, '_mod);\n')
 code:write "  return 1;\n"
 code:write "}\n"
 code:write "\n"
