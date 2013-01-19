@@ -71,7 +71,7 @@ function translateType(cur, typ)
         typ = cur:type()
     end
 
-    local tr = {
+    local tr_tb = {
       Int = "int",
       UInt = "unsigned int",
       Long = "long",
@@ -79,25 +79,25 @@ function translateType(cur, typ)
       ["Char_S *"] = "const char *",
     }
 
-    local function tr_f(d) return tr[d] or d end 
+    local function tr(d) return tr_tb[d] or d end 
 
     local typeKind = tostring(typ)
     if typeKind == 'Typedef' or typeKind == 'Record' then
         return typ:declaration():name()
     elseif typeKind == 'Pointer' then
-        return tr_f(translateType(cur, typ:pointee()) .. ' *')
+        return tr(translateType(cur, typ:pointee()) .. ' *')
     elseif typeKind == 'LValueReference' then
         return translateType(cur, typ:pointee()) .. ' &'
     elseif typeKind == 'Unexposed' then
         local def = getExtent(cur:location())
         def = trim(def:gsub("%*.*", "")) -- change eg struct stat *buf to struct stat
-        return tr_f(def)
+        return tr(def)
     elseif typeKind == 'FunctionProto' then
         local def = getExtent(cur:location())
         def = trim(def:gsub("%s.+%(.*%)", "")) -- remove function name and args, just return type
-        return tr_f(def)
+        return tr(def)
     else
-        return tr_f(typeKind)
+        return tr(typeKind)
     end
 end
 
