@@ -103,31 +103,45 @@ function findChildrenByType(cursor, type)
    return children
 end
 
+local function trim(s)
+ local from = s:match"^%s*()"
+ local res = from > #s and "" or s:match(".*%S", from)
+ return res
+end
+
 function translateType(cur, typ)
     if not typ then
         typ = cur:type()
     end
 
+    local tr = {
+      Int = "int",
+      UInt = "unsigned int",
+      Long = "long",
+      ULong = "unsigned long",
+    }
+
+    local function tr_f(d) return tr[d] or d end 
+
     local typeKind = tostring(typ)
     if typeKind == 'Typedef' or typeKind == 'Record' then
         return typ:declaration():name()
     elseif typeKind == 'Pointer' then
-        return translateType(cur, typ:pointee()) .. '*'
+        return translateType(cur, typ:pointee()) .. ' *'
     elseif typeKind == 'LValueReference' then
-        return translateType(cur, typ:pointee()) .. '&'
+        return translateType(cur, typ:pointee()) .. ' &'
     elseif typeKind == 'Unexposed' then
         local def = getExtent(cur:location())
+        def = trim(def:gsub("%*.*", "")) -- change eg struct stat *buf to struct stat
         DBG('!Unexposed!', def)
-        return def
+        return tr_f(def)
+    elseif typeKind == 'FunctionProto' then
+        local def = getExtent(cur:location())
+        def = trim(def:gsub("%s.+%(.*%)", "")) -- remove function name and args, just return type
+        return tr_f(def)
     else
-        return typeKind
+        return tr_f(typeKind)
     end
-end
-
-local function trim(s)
- local from = s:match"^%s*()"
- local res = from > #s and "" or s:match(".*%S", from)
- return res
 end
 
 local dumpCode
@@ -144,7 +158,7 @@ code:write [[
 
 ]]
 
-local sf, pf = {}, {}
+local sf, pf, funcs = {}, {}, {}
 
 local function structFields(cur, name)
   sf[name] = {}
@@ -159,6 +173,7 @@ end
 
 local function parmFields(cur, name)
   pf[name] = {}
+  funcs[name] = cur
   fields = findChildrenByType(cur, "ParmDecl")
   for _, f in ipairs(fields) do
     pf[name][#pf[name] + 1] = f
@@ -220,12 +235,23 @@ code:write [[
 
 -- how to handle C types
 
+local function check_s(str)
+  return function(s) return str .. "(L, " .. s .. ")" end
+end
+
+local function check_u(sk, k)
+  return function(s) return '(' .. sk .. ') luaL_checkudata(L, ' .. s .. ', "' .. libname .. '.' .. k .. '")' end
+end
+
 local typeHandlers = {
-  Int = {check = "luaL_checkint", push = "lua_pushinteger", ctype = "int"},
-  UInt = {check = "luaL_checkint", push = "lua_pushinteger", ctype = "unsigned int"},
+  int = {check = check_s "luaL_checkint", push = "lua_pushinteger", ctype = "int"},
+  ["unsigned int"] = {check = check_s "luaL_checkint", push = "lua_pushinteger", ctype = "unsigned int"},
 -- clearly we need TODO more work here for long values larger than 32 bits!
-  Long = {check = "luaL_checklong", push = "lua_pushinteger", ctype = "long"},
-  ULong = {check = "luaL_checklong", push = "lua_pushinteger", ctype = "unsigned long"},
+  long = {check = check_s "luaL_checklong", push = "lua_pushinteger", ctype = "long"},
+  ["unsigned long"] = {check = check_s "luaL_checklong", push = "lua_pushinteger", ctype = "unsigned long"},
+  ["Char_S *"] = {check = check_s "luaL_checkstring", push = "lua_pushstring", ctype = "const char *"},
+  -- TODO generate this!
+  ["struct stat *"] = {check = check_u("struct stat *", "stat"), push = nil, ctype="struct stat *"},
 }
 
 for k, t in pairs(sf) do
@@ -241,8 +267,8 @@ for k, t in pairs(sf) do
   code:write "}\n"
   code:write "\n"
 
-  -- function to check userdata is this type and assign to a
-  local check = '  ' .. sk .. ' *a = (' .. sk .. ' *) luaL_checkudata(L, 1, "' .. libname .. '.' .. k .. '");\n'
+  -- check userdata is this type and assign to a
+  local function check(s) return sk .. ' *a = ' .. check_u(sk .. " *", k)(s) ..';\n' end
 
   -- set functions
   for f, ft in pairs(t) do
@@ -250,8 +276,8 @@ for k, t in pairs(sf) do
     local th = assert(typeHandlers[tp], "Cannot handle type " .. tp)
     local name = ft:name()
     code:write("static int set_", k, "_", name, "(lua_State *L) {\n")
-    code:write(check)
-    code:write("  ", th.ctype, " v = ", th.check, "(L, 2);\n")
+    code:write("  ", check(1))
+    code:write("  ", th.ctype, " v = ", th.check(2), ";\n")
     code:write("  a->", name, " = v;\n")
     code:write "  return 0;\n"
     code:write "}\n"
@@ -263,7 +289,7 @@ for k, t in pairs(sf) do
     local th = assert(typeHandlers[tp], "Cannot handle type " .. tp)
     local name = ft:name()
     code:write("static int get_", k, "_", name, "(lua_State *L) {\n")
-    code:write(check)
+    code:write("  ", check(1))
     code:write("  ", th.ctype, " v = a->", name, ";\n")
     code:write("  ", th.push, "(L, v);\n")
     code:write "  return 1;\n"
@@ -289,9 +315,26 @@ end
 -- output code for functions
 for k, as in pairs(pf) do
   code:write("static int ", k, "_f(lua_State *L) {\n")
-  for _, a in pairs(as) do
-print(a, a:name(), translateType(a))
+  for n, a in pairs(as) do
+    local tp = translateType(a)
+    local name = a:name()
+    local th = assert(typeHandlers[tp], "Cannot handle type " .. tp)
+    code:write("  ", th.ctype, " ", name, " = ", th.check(n), ";\n")
   end
+  local tp = translateType(funcs[k])
+  local name = funcs[k]:name()
+  code:write("  ", tp, " ret = ", name, "(")
+  for n, a in pairs(as) do
+    if n ~= 1 then code:write ", " end
+    code:write(a:name())
+  end
+  code:write ");\n"
+  code:write "  if (ret == -1) {\n"
+  code:write "    lua_pushnil(L);\n"
+  code:write "    lua_pushstring(L, strerror(errno));\n"
+  code:write "    return 2;\n"
+  code:write "  }\n"
+  code:write "  lua_pushnumber(L, ret);\n"
   code:write "  return 1;\n"
   code:write "};\n\n"
 end
@@ -309,7 +352,9 @@ code:write("static const struct luaL_Reg ", libname, "_mod [] = {\n")
 for k, t in pairs(sf) do
   code:write('  {"', k, '_t", new_', k, '},\n')
 end
--- TODO output functions
+for k, t in pairs(funcs) do
+  code:write('  {"', k, '", ', k, '_f},\n')
+end
 code:write "  {NULL, NULL}\n"
 code:write "};\n"
 code:write "\n"

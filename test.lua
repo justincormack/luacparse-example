@@ -17,3 +17,9 @@ local e = stat.example_t()
 e:set_x(4)
 assert(e:x() == 4, "should have set value")
 
+local ok, err = stat.stat("cindex.lua", st)
+assert(st:st_size() == 12916, "cindex.lua is 12916 bytes long, got " .. st:st_size())
+
+local ok, err = stat.stat("non existent file", st)
+assert(ok == nil and err == "No such file or directory", "should got no such file")
+
