@@ -2,49 +2,10 @@ package.cpath = package.cpath .. ';../build/?.so'
 
 local clang = require 'luaclang-parser'
 
--- from http://stevedonovan.github.com/Penlight/api/modules/pl.text.html#format_operator
-do
-    local format = string.format
-
-    -- a more forgiving version of string.format, which applies
-    -- tostring() to any value with a %s format.
-    local function formatx (fmt,...)
-        local args = {...}
-        local i = 1
-        for p in fmt:gmatch('%%.') do
-            if p == '%s' and type(args[i]) ~= 'string' then
-                args[i] = tostring(args[i])
-            end
-            i = i + 1
-        end
-        return format(fmt,unpack(args))
-    end
-
-    -- Note this goes further than the original, and will allow these cases:
-    -- 1. a single value
-    -- 2. a list of values
-    getmetatable("").__mod = function(a, b)
-        if b == nil then
-            return a
-        elseif type(b) == "table" then
-            return formatx(a,unpack(b))
-        else
-            return formatx(a,b)
-        end
-    end
-end
-
----[[
-local DBG = function() end
---[=[]]
-local DBG = print
---]=]
-
 do
     local cache = setmetatable({}, {__mode="k"})
     function getExtent(file, fromRow, fromCol, toRow, toCol)
         if not file then
-            DBG(file, fromRow, fromCol, toRow, toCol)
             return ''
         end
         if not cache[file] then
@@ -58,7 +19,6 @@ do
         end
         local lines = cache[file]
         if not (lines and lines[fromRow] and lines[toRow]) then
-            DBG('!!! Missing lines '..fromRow..'-'..toRow..' in file '..file)
             return ''
         end
         if fromRow == toRow then
@@ -133,7 +93,6 @@ function translateType(cur, typ)
     elseif typeKind == 'Unexposed' then
         local def = getExtent(cur:location())
         def = trim(def:gsub("%*.*", "")) -- change eg struct stat *buf to struct stat
-        DBG('!Unexposed!', def)
         return tr_f(def)
     elseif typeKind == 'FunctionProto' then
         local def = getExtent(cur:location())
@@ -166,7 +125,6 @@ local function structFields(cur, name)
   for _, f in ipairs(fields) do
     if f:name():sub(1, 2) ~= "__" then
       sf[name][#sf[name] + 1] = f
-      --code:write("/* field ", f:name(), " */\n")
     end
   end
 end
@@ -177,7 +135,6 @@ local function parmFields(cur, name)
   fields = findChildrenByType(cur, "ParmDecl")
   for _, f in ipairs(fields) do
     pf[name][#pf[name] + 1] = f
-    -- code:write("/* parm ", f:name(), " */\n")
   end
 end
 
@@ -215,10 +172,6 @@ dumpCode = function(cur)
     local tag = cur:kind()
     local name = trim(cur:name())
     local attr = ' name="' .. name .. '"'
-    --local dname = trim(cur:displayName())
-    --if dname ~= name then
-    --    attr = attr .. ' display="' .. dname .. '"'
-    --end
     local text = trim(getExtent(cur:location()))
     local children = cur:children()
 
@@ -250,17 +203,18 @@ local typeHandlers = {
   long = {check = check_s "luaL_checklong", push = "lua_pushinteger", ctype = "long"},
   ["unsigned long"] = {check = check_s "luaL_checklong", push = "lua_pushinteger", ctype = "unsigned long"},
   ["Char_S *"] = {check = check_s "luaL_checkstring", push = "lua_pushstring", ctype = "const char *"},
-  -- TODO generate this!
-  ["struct stat *"] = {check = check_u("struct stat *", "stat"), push = nil, ctype="struct stat *"},
 }
 
 for k, t in pairs(sf) do
   -- create constructor for type
-  local sk = "struct " .. k 
+  local sk = "struct " .. k
+  local skk = sk .. " *"
+  typeHandlers[skk] = {check = check_u(skk, k), push = nil, ctype = skk}
+
   code:write("static int new_", k, "(lua_State *L) {\n")
   -- TODO accept initializers
-  code:write("  ", sk, " *a;\n")
-  code:write("  a = (", sk, " *) lua_newuserdata(L, sizeof(", sk, "));\n")
+  code:write("  ", skk, "a;\n")
+  code:write("  a = (", skk, ") lua_newuserdata(L, sizeof(", sk, "));\n")
   code:write('  luaL_getmetatable(L, "', libname, ".", k, '");\n')
   code:write "  lua_setmetatable(L, -2);\n"
   code:write "  return 1;\n"
@@ -268,7 +222,7 @@ for k, t in pairs(sf) do
   code:write "\n"
 
   -- check userdata is this type and assign to a
-  local function check(s) return sk .. ' *a = ' .. check_u(sk .. " *", k)(s) ..';\n' end
+  local function check(s) return skk .. 'a = ' .. check_u(skk, k)(s) ..';\n' end
 
   -- set functions
   for f, ft in pairs(t) do
