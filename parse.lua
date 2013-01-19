@@ -41,7 +41,6 @@ end
 local index = clang.createIndex(false, true)
 
 -- Create translation unit
-
 local tu = assert(index:parse(arg))
 
 -- write code
