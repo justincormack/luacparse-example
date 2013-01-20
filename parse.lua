@@ -166,17 +166,16 @@ local kinds = {
   end,
 }
 
-dumpCode = function(cur)
+readCode = function(cur)
     local tag = cur:kind()
     local name = trim(cur:name())
-    local attr = ' name="' .. name .. '"'
     local text = trim(getExtent(cur:location()))
     local children = cur:children()
 
     if kinds[tag] then kinds[tag](cur, name, text, children) end
 end
 
-dumpCode(tu:cursor())
+readCode(tu:cursor())
 
 code:write [[
 
