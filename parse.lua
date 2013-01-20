@@ -101,7 +101,7 @@ function translateType(cur, typ)
     end
 end
 
-local dumpCode
+local readCode
 
 local libname = arg[1]:gsub(".c", "")
 
@@ -139,7 +139,7 @@ end
 local kinds = {
   TranslationUnit = function(cur, name, text, children)
     for _, c in ipairs(children) do
-      dumpCode(c)
+      readCode(c)
     end
   end,
   TypedefDecl = function(cur, name, text, children)
