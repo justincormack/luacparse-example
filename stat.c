@@ -22,9 +22,7 @@ struct stat {
 };
 
 struct example {
-  int x;
-  int y;
-  int z;
+  int x, y, z;
 };
 
 int stat(const char *path, struct stat *buf);

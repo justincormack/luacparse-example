@@ -24,6 +24,7 @@
 			text-align:center;
 			}
                 .tiny {font-size: 13px;}
+                #codegen div.im img {display:block; margin-left:auto; margin-right: auto;}
 	</style>
 </head>
 <body class="list" onload="prettyPrint()">
@@ -40,6 +41,11 @@
 		</section>
 	</div></div>
 
+<div class="slide shout" id="githubshout">
+<div><section><header>
+<h4><a href="https://github.com/justincormack/luacparse-example">https://github.com/justincormack/luacparse-example</a></h4>
+</header></section></div></div>
+
 <div class="slide shout" id="introshout">
 <div><section><header>
 <h2>Introduction</h2>
@@ -50,11 +56,136 @@
 <header>
 <h2>What is this all about?</h2>
 </header>
-<p>
+<p>Lua has a nice simple flexible binding to C.
+<p>Unfortunately if you have a lot of bindings to do, or they change a lot it is a bit tedious.
+<p>Especially if you are lazy.
+
+<p>Automating this would be nice. C cannot do introspection, so we need tools.
+</section>
+</div></div>
+
+
+<div class="slide" id="llvm"><div>
+<section>
+<header>
+<h2>What is LLVM?</h2>
+</header>
+<p>Compiler suite developed by the University of Illinois and then Apple.
+
+<p>Modular, code is developed as reusable libraries that each deal with part of compiling a programming language. Runs on Linux, BSD, Windows, MacOS.
+
+<p>These libraries can be bound to Lua of course.
 
 </section>
 </div></div>
 
+<div class="slide" id="clang"><div>
+<section>
+<header>
+<h2>Clang</h2>
+</header>
+<p>Clang is the C and C++ (and Objective C) front end for LLVM.
+
+<p>Clang can parse C code into a tree which we can read. This is the bit we will use today. It can do more, will discuss later.
+
+<p>Remember it is a full C and C++ compiler, so it can deal with <code>#include</code>, <code>#define</code>, conditional compilation and all that, as well as all of C++.
+
+</section>
+</div></div>
+
+<div class="slide shout" id="codeshout">
+<div><section><header>
+<h2>Coding</h2>
+</header></section></div></div>
+
+<div class="slide" id="clangbinding"><div>
+<section>
+<header>
+<h2>Clang Lua binding</h2>
+</header>
+<p>There are several of these. The one I picked, is by Michal Kottman <a href="https://github.com/mkottman/luaclang-parser">https://github.com/mkottman/luaclang-parser</a>. The only slightly complicated thing about running it is that it requires version 3.1 or later, which is quite recent. I used Ubuntu PPA packages for easy install as it is a bit of a pain to compile by hand.
+
+<p>This comes with a little example script that dumps a parse tree to XML and into a sqlite database, which works with Qt, which is a huge C++ library.
+
+</section>
+</div></div>
+
+
+<div class="slide" id="parsestruct"><div>
+<section>
+<header>
+<h2>What does the parse look like?</h2>
+</header>
+<pre class="prettyprint">
+struct example { int x, y, z; };
+</pre>
+
+<p>XML summary below. Does not have all available data eg types.
+
+<pre class="prettyprint">
+&lt;StructDecl name="example" text="struct example { int x, y, z; }" &gt;
+&lt;FieldDecl name="x" text="int x" /&gt;
+&lt;FieldDecl name="y" text="int x, y" /&gt;
+&lt;FieldDecl name="z" text="int x, y, z" /&gt;
+&lt;/StructDecl&gt;
+</pre>
+
+</section>
+</div></div>
+
+<div class="slide" id="parsefn"><div>
+<section>
+<header>
+<h2>What does the parse look like?</h2>
+</header>
+<pre class="prettyprint">
+int stat(const char *path, struct stat *buf);
+</pre>
+
+<pre class="prettyprint">
+&lt;FunctionDecl name="stat" display="stat(const char *, struct stat *)" text="int stat(const char *path, struct stat *buf)" &gt;
+&lt;ParmDecl name="path" text="const char *path" /&gt;
+&lt;ParmDecl name="buf" text="struct stat *buf" &gt;
+&lt;TypeRef name="struct stat" text="stat" /&gt;
+&lt;/ParmDecl>
+</pre>
+
+</section>
+</div></div>
+
+<div class="slide" id="codegen"><div>
+<section>
+<header>
+<h2>How to use this do do code generation</h2>
+</header>
+<p>First decide what you want the generated code to look like. This planning stage is important, as writing code to generate code can get messy. It really helps if he code you are going to bind is very consistent in how it uses types, error handling etc, and you know it well.
+
+<div class="im">
+<a href="http://www.flickr.com/photos/usnationalarchives/4271791717/" title="Oregon Gasoline Dealers Were &quot;Kidded&quot; About Their No Gas and Other Signs at the Service Stations During the Nation's Fuel Crisis of 1973-74. A Signboard at This Motel-Restaurant in Klamath Falls &quot;Restricted&quot; Spaghetti Intake Only Among Gas Dealers 03/1974 by The U.S. National Archives, on Flickr"><img src="pictures/spaghetti.jpg" width="400" alt="Oregon Gasoline Dealers Were &quot;Kidded&quot; About Their No Gas and Other Signs at the Service Stations During the Nation's Fuel Crisis of 1973-74. A Signboard at This Motel-Restaurant in Klamath Falls &quot;Restricted&quot; Spaghetti Intake Only Among Gas Dealers 03/1974"></a>
+</div>
+
+</section>
+</div></div>
+
+<div class="slide" id="process"><div>
+<section>
+<header>
+<h2>How to use this do do code generation</h2>
+</header>
+<ol>
+<li>traverse parse tree</li>
+<li>create table for structs <code>&lt;StructDecl&gt;</code>, with their fields <code>&lt;FieldDecl&gt;</code> in.</li>
+<li>create table for functions <code>&lt;FunctionDecl&gt;</code>, with their parameters <code>&lt;ParmDecl&gt;</code>.</li>
+<li>write out code to create a userdata for each struct, with a metatable, and get and set methods.</li>
+<li>write out code for each function, checking for the right types on the stack, handling errors.</li>
+</ol>
+</section>
+</div></div>
+
+<div class="slide shout" id="demo">
+<div><section><header>
+<h2>Demo</h2>
+</header></section></div></div>
 
 
 
@@ -85,7 +216,7 @@
 <h2>Want to find out more?</h2>
 </header>
 <p>Code and presentation are at <a href="https://github.com/justincormack/luacparse-example">https://github.com/justincormack/luacparse-example</a>.
-<p>Parser code is at <a href="https://github.com/mkottman/luaclang-parser">hhttps://github.com/mkottman/luaclang-parser</a>.
+<p>Parser code is at <a href="https://github.com/mkottman/luaclang-parser">https://github.com/mkottman/luaclang-parser</a>.
 <p>Ubuntu packages for LLVM 3.1 are at <a href="https://launchpad.net/ubuntu/+ppas?name_filter=llvm">https://launchpad.net/ubuntu/+ppas?name_filter=llvm</a>
 <p>I am on twitter at <a href="https://twitter.com/justincormack">@justincormack</a> or at <a href="mailto:justin@specialbusservice.com">justin@specialbusservice.com</a>.
 </section>
